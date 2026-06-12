@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClearPath — Supply Chain Risk Intelligence</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:            #0d1117;
+      --surface:       #161b22;
+      --border:        #30363d;
+      --border-hover:  #444c56;
+      --text-primary:  #e6edf3;
+      --text-secondary:#8b949e;
+      --critical:      #f85149;
+      --high:          #fb8500;
+      --medium:        #d29922;
+      --low:           #3fb950;
+      --ease-expo:     cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    html {
+      background: var(--bg);
+      color: var(--text-primary);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    body { min-height: 100vh; display: flex; flex-direction: column; }
+
+    /* ── Header ────────────────────────────────────────────────── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 24px 32px;
+      border-bottom: 0.5px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .header-left { display: flex; flex-direction: column; gap: 3px; }
+
+    .header-title-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-title {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.04em;
+      color: var(--text-primary);
+      text-wrap: balance;
+    }
+
+    .header-subtitle {
+      font-size: 12px;
+      color: var(--text-secondary);
+      letter-spacing: 0.01em;
+    }
+
+    /* ── Mode indicator (1) ─────────────────────────────────────── */
+    .mode-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .mode-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .mode-dot.demo { background: #fb8500; }
+    .mode-dot.live { background: #3fb950; }
+    .mode-label    { font-size: 11px; color: var(--text-secondary); }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .mode-dot.live { animation: pulse-live 2s ease-in-out infinite; }
+    }
+    @keyframes pulse-live {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    /* ── Run Analysis button ───────────────────────────────────── */
+    .btn-run {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 14px;
+      background: #238636;
+      color: #fff;
+      border: 0.5px solid rgba(255,255,255,0.07);
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      user-select: none;
+      outline: none;
+      transition: transform 150ms var(--ease-expo);
+    }
+
+    .btn-run:hover:not(.loading)  { background: #2ea043; }
+    .btn-run:active:not(.loading) { transform: scale(0.97); }
+    .btn-run:focus-visible        { outline: 2px solid #388bfd; outline-offset: 2px; }
+    .btn-run.loading              { opacity: 0.65; cursor: not-allowed; pointer-events: none; }
+
+    .btn-icon { width: 13px; height: 13px; flex-shrink: 0; }
+
+    /* ── Main ──────────────────────────────────────────────────── */
+    .main { flex: 1; padding: 24px 32px 32px; }
+
+    /* ── Status bar ────────────────────────────────────────────── */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+
+    .status-bar-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+    }
+
+    .status-counts { display: flex; gap: 18px; }
+
+    .status-count {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .status-count-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ── Grid ──────────────────────────────────────────────────── */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 16px;
+    }
+
+    /* ── Risk Card ─────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: transform 200ms var(--ease-expo), border-color 150ms ease-out;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      border-color: var(--border-hover);
+    }
+
+    .card[data-severity="CRITICAL"] { border-left: 2px solid rgba(248,81,73,0.50); }
+    .card[data-severity="HIGH"]     { border-left: 2px solid rgba(251,133,0,0.40); }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .card { opacity: 0; }
+      .card.visible { animation: card-enter 280ms var(--ease-expo) both; }
+    }
+
+    @keyframes card-enter {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .card { opacity: 1; }
+      .card:hover { transform: none; }
+    }
+
+    /* ── Card top row ──────────────────────────────────────────── */
+    .card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .vessel-name {
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ── Severity badge ────────────────────────────────────────── */
+    .sev-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      flex-shrink: 0;
+      transition: background-color 300ms ease-out, color 300ms ease-out;
+    }
+
+    .sev-dot {
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+      flex-shrink: 0;
+    }
+
+    .sev-badge.CRITICAL {
+      background: rgba(248,81,73,0.13);
+      color: var(--critical);
+      border: 0.5px solid rgba(248,81,73,0.24);
+    }
+    .sev-badge.HIGH {
+      background: rgba(251,133,0,0.11);
+      color: var(--high);
+      border: 0.5px solid rgba(251,133,0,0.22);
+    }
+    .sev-badge.MEDIUM {
+      background: rgba(210,153,34,0.11);
+      color: var(--medium);
+      border: 0.5px solid rgba(210,153,34,0.22);
+    }
+    .sev-badge.LOW {
+      background: rgba(63,185,80,0.09);
+      color: var(--low);
+      border: 0.5px solid rgba(63,185,80,0.18);
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .sev-badge.CRITICAL .sev-dot { animation: pulse-dot 1.5s ease-in-out infinite; }
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.25; }
+    }
+
+    /* ── Route row ─────────────────────────────────────────────── */
+    .card-route-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .route-label {
+      font-size: 12px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .route-arrow { opacity: 0.45; margin: 0 2px; }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .status-pill.IN_TRANSIT { background: rgba(56,139,253,0.11);  color: #388bfd; }
+    .status-pill.DIVERTED   { background: rgba(137,87,229,0.11);  color: #8957e5; }
+    .status-pill.DELAYED    { background: rgba(110,118,129,0.14); color: #768390; }
+
+    /* ── 2×2 Metric grid ───────────────────────────────────────── */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .metric-tile {
+      background: #0d1117;
+      border: 0.5px solid var(--border);
+      border-radius: 5px;
+      padding: 9px 11px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .metric-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+    }
+
+    .metric-value {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--text-primary);
+      font-variant-numeric: tabular-nums;
+      line-height: 1.15;
+      display: flex;
+      align-items: baseline;
+      gap: 2px;
+    }
+
+    .metric-value.warn   { color: var(--high); }
+    .metric-value.danger { color: var(--critical); }
+    .metric-value.cargo  { font-size: 13px; font-weight: 500; letter-spacing: 0; align-items: center; }
+
+    .metric-unit {
+      font-size: 10px;
+      font-weight: 400;
+      color: var(--text-secondary);
+      margin-left: 1px;
+    }
+
+    /* ── Waypoint callout (4) ──────────────────────────────────── */
+    .waypoint-callout {
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 1.4;
+    }
+
+    /* ── Reasoning ─────────────────────────────────────────────── */
+    .reasoning {
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      max-width: 65ch;
+    }
+
+    /* ── Alternate route block ─────────────────────────────────── */
+    .alt-block {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 10px 12px;
+      border-radius: 5px;
+    }
+
+    .alt-block.CRITICAL {
+      background: rgba(248,81,73,0.05);
+      border: 0.5px solid rgba(248,81,73,0.18);
+    }
+    .alt-block.HIGH {
+      background: rgba(251,133,0,0.05);
+      border: 0.5px solid rgba(251,133,0,0.18);
+    }
+
+    .alt-block-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .alt-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+    }
+
+    .eta-chip          { font-size: 11px; font-weight: 600; }
+    .eta-chip.CRITICAL { color: var(--critical); }
+    .eta-chip.HIGH     { color: var(--high); }
+
+    .alt-route-text {
+      font-size: 12px;
+      color: var(--text-primary);
+      line-height: 1.4;
+    }
+
+    /* ── Footer ────────────────────────────────────────────────── */
+    .footer {
+      display: flex;
+      justify-content: center;
+      padding: 16px 32px;
+      border-top: 0.5px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .last-updated { font-size: 11px; color: var(--text-secondary); }
+
+    /* ── Loading / empty state ─────────────────────────────────── */
+    .state-placeholder {
+      grid-column: 1 / -1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 260px;
+      gap: 10px;
+      color: var(--text-secondary);
+      font-size: 13px;
+    }
+
+    .spinner {
+      width: 18px; height: 18px;
+      border: 1.5px solid var(--border);
+      border-top-color: var(--text-secondary);
+      border-radius: 50%;
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .spinner { animation: spin 0.75s linear infinite; }
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Skeleton loading (3) ──────────────────────────────────── */
+    .skeleton-card {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .skeleton-block {
+      background: var(--border);
+      border-radius: 4px;
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .skeleton-block { animation: skeleton-pulse 1.5s ease-in-out infinite; }
+    }
+
+    @keyframes skeleton-pulse {
+      0%, 100% { opacity: 0.4; }
+      50%       { opacity: 0.8; }
+    }
+
+    /* ── Slack toast (2) ───────────────────────────────────────── */
+    .slack-toast {
+      position: fixed;
+      bottom: 28px;
+      right: 28px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      background: #1c2128;
+      border: 0.5px solid var(--border);
+      border-left: 3px solid #3fb950;
+      border-radius: 6px;
+      font-size: 13px;
+      color: var(--text-primary);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      pointer-events: none;
+      opacity: 0;
+      transform: translateX(calc(100% + 28px));
+      z-index: 100;
+    }
+
+    .toast-check {
+      color: #3fb950;
+      font-size: 14px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .slack-toast {
+        transition: opacity 300ms var(--ease-expo), transform 300ms var(--ease-expo);
+      }
+    }
+
+    .slack-toast.visible {
+      opacity: 1;
+      transform: translateX(0);
+    }
+
+    /* ── View toggle ───────────────────────────────────────────── */
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .view-toggle {
+      display: flex;
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: 6px;
+      padding: 2px;
+      gap: 2px;
+    }
+
+    .toggle-btn {
+      padding: 5px 11px;
+      border-radius: 4px;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      user-select: none;
+      outline: none;
+      transition: background-color 120ms ease-out, color 120ms ease-out, transform 150ms var(--ease-expo);
+    }
+
+    .toggle-btn:hover:not(.active) { color: var(--text-primary); background: rgba(255,255,255,0.04); }
+    .toggle-btn:active             { transform: scale(0.97); }
+    .toggle-btn:focus-visible      { outline: 2px solid #388bfd; outline-offset: 2px; }
+    .toggle-btn.active             { background: #21262d; color: var(--text-primary); }
+
+    /* ── Stream view ───────────────────────────────────────────── */
+    .stream-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+
+    .stream-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+    }
+
+    .openui-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 7px;
+      background: rgba(137,87,229,0.12);
+      color: #8957e5;
+      border: 0.5px solid rgba(137,87,229,0.25);
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .token-counter {
+      font-size: 11px;
+      color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .token-counter .count {
+      color: #8957e5;
+      font-weight: 600;
+    }
+
+    .card[data-source="openui"] {
+      border-bottom: 1.5px solid rgba(137,87,229,0.30);
+    }
+
+    #streamView        { display: none; }
+    #streamView.active { display: block; }
+    #dashView.hidden   { display: none; }
+  </style>
+</head>
+<body>
+
+  <header class="header">
+    <div class="header-left">
+      <div class="header-title-row">
+        <h1 class="header-title">ClearPath</h1>
+        <!-- (1) Mode indicator — populated by app.js on load -->
+        <span class="mode-indicator" id="modeIndicator">
+          <span class="mode-dot"  id="modeDot"></span>
+          <span class="mode-label" id="modeLabel"></span>
+        </span>
+      </div>
+      <!-- (5) id added — JS updates text after each analysis run -->
+      <p class="header-subtitle" id="headerSubtitle">Supply chain risk intelligence &mdash; 5 active shipments</p>
+    </div>
+    <div class="header-right">
+      <div class="view-toggle" role="group" aria-label="View mode">
+        <button class="toggle-btn active" id="btnDashView"
+                onclick="window.switchView('dashboard')">Dashboard</button>
+        <button class="toggle-btn"        id="btnStreamView"
+                onclick="window.switchView('stream')">&#9889; OpenUI Stream</button>
+      </div>
+      <button class="btn-run" id="btnRun" onclick="window.runAnalysis()">
+        <svg class="btn-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Z" fill="currentColor" opacity="0.4"/>
+          <path d="M6.25 5.25 11 8l-4.75 2.75v-5.5Z" fill="currentColor"/>
+        </svg>
+        Run Analysis
+      </button>
+    </div>
+  </header>
+
+  <main class="main">
+
+    <!-- ── Dashboard view ────────────────────────────────────────── -->
+    <div id="dashView">
+      <div class="status-bar">
+        <span class="status-bar-label">Fleet Status</span>
+        <div class="status-counts" id="statusCounts"></div>
+      </div>
+      <div class="grid" id="grid">
+        <div class="state-placeholder">
+          <div class="spinner"></div>
+          <span>Loading analysis&hellip;</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── OpenUI streaming view ──────────────────────────────────── -->
+    <div id="streamView">
+      <div class="stream-header">
+        <div class="stream-label">
+          Live Stream
+          <span class="openui-badge">OpenUI Lang</span>
+        </div>
+        <span class="token-counter" id="tokenCounter">
+          <span class="count" id="tokenCount">0</span> tokens received
+        </span>
+      </div>
+      <div class="grid" id="streamGrid"></div>
+    </div>
+
+  </main>
+
+  <footer class="footer">
+    <span class="last-updated" id="lastUpdated">&mdash;</span>
+  </footer>
+
+  <!-- (2) Slack-style alert toast — JS controls .visible class -->
+  <div class="slack-toast" id="slackToast" role="status" aria-live="polite">
+    <span class="toast-check">&#10003;</span>
+    Alert sent to #logistics-channel
+  </div>
+
+  <script src="/static/openui-library.js"></script>
+  <script src="/static/openui-demo.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

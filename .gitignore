@@ -21,3 +21,4 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+agent_results_*.json

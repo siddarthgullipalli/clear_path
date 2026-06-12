@@ -1,32 +1,32 @@
 services:
   - type: web
-    name: supply-chain-risk-agent
+    name: clearpath
     env: python
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: JUA_API_KEY
+      - key: PIONEER_API_KEY
         sync: false
+      - key: PIONEER_MODEL_NAME
+        value: "Qwen/Qwen3-8B"
+      - key: PIONEER_BASE_URL
+        value: "https://api.pioneer.ai/v1"
+      - key: COMPOSIO_API_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        value: "7553792941"
       - key: CLICKHOUSE_HOST
-        sync: false
-      - key: CLICKHOUSE_PORT
-        sync: false
-      - key: CLICKHOUSE_USER
         sync: false
       - key: CLICKHOUSE_PASSWORD
         sync: false
+      - key: CLICKHOUSE_PORT
+        value: "8443"
       - key: CLICKHOUSE_DATABASE
-        sync: false
-      - key: TRUEFOUNDRY_API_KEY
-        sync: false
-      - key: TRUEFOUNDRY_BASE_URL
-        sync: false
-      - key: PIONEER_MODEL_NAME
-        sync: false
-      - key: COMPOSIO_API_KEY
-        sync: false
-      - key: SLACK_CHANNEL_ID
-        sync: false
+        value: "supply_chain"
+      - key: USE_MOCKS
+        value: "true"
       - key: DEMO_MODE
         value: "false"
       - key: PORT

@@ -1,0 +1,112 @@
+[
+  {
+    "shipment_id": "SH-01",
+    "vessel": "MV Pacific Star",
+    "origin": "Taipei",
+    "destination": "Rotterdam",
+    "cargo": "Semiconductors",
+    "status": "DIVERTED",
+    "severity": "CRITICAL",
+    "reasoning": "The MV Pacific Star, carrying high-value semiconductors from Taipei to Rotterdam, faces a CRITICAL risk due to a 94% probability of encountering a 91.0-knot wind event within 72 hours, with the worst conditions expected at waypoint [20.0, 118.0], posing a severe threat to vessel safety and potentially causing significant financial loss due to cargo damage, delays, or even total loss. The high-value semiconductor cargo could result in millions in losses if the vessel is damaged or the cargo is compromised, impacting supply chain reliability and incurring substantial insurance and recovery costs.",
+    "alternate_route": "Via Cape of Good Hope (bypass Suez)",
+    "eta_impact_hrs": 168,
+    "weather_snapshot": {
+      "wind_knots_now": 72.0,
+      "wind_knots_max_72h": 91.0,
+      "wave_height_m": 8.5,
+      "storm_probability": 0.94,
+      "worst_waypoint": [
+        20.0,
+        118.0
+      ]
+    }
+  },
+  {
+    "shipment_id": "SH-02",
+    "vessel": "MV Asian Horizon",
+    "origin": "Singapore",
+    "destination": "Los Angeles",
+    "cargo": "Electronics",
+    "status": "IN_TRANSIT",
+    "severity": "LOW",
+    "reasoning": "Conditions within normal parameters. No action required.",
+    "alternate_route": null,
+    "eta_impact_hrs": 0,
+    "weather_snapshot": {
+      "wind_knots_now": 9.8,
+      "wind_knots_max_72h": 20.5,
+      "wave_height_m": 1.0,
+      "storm_probability": 0.01,
+      "worst_waypoint": [
+        33.7,
+        -118.2
+      ]
+    }
+  },
+  {
+    "shipment_id": "SH-03",
+    "vessel": "MV Northern Light",
+    "origin": "Shanghai",
+    "destination": "Hamburg",
+    "cargo": "Automotive Parts",
+    "status": "DIVERTED",
+    "severity": "CRITICAL",
+    "reasoning": "The MV Northern Light, en route from Shanghai to Hamburg with a critical cargo of automotive parts, faces a **CRITICAL** risk due to a **99% storm probability** with **20.5 knots max winds** expected within 72 hours, posing a severe threat to vessel safety and cargo integrity. This high-severity weather event could result in **significant financial losses** due to potential delays, damage to high-value automotive components, and possible cargo loss, impacting supply chain operations and contractual obligations.",
+    "alternate_route": "Via Cape of Good Hope (bypass Suez)",
+    "eta_impact_hrs": 192,
+    "weather_snapshot": {
+      "wind_knots_now": 7.0,
+      "wind_knots_max_72h": 20.5,
+      "wave_height_m": 0.6,
+      "storm_probability": 0.99,
+      "worst_waypoint": [
+        22.0,
+        114.0
+      ]
+    }
+  },
+  {
+    "shipment_id": "SH-04",
+    "vessel": "MV Coral Queen",
+    "origin": "Sydney",
+    "destination": "Dubai",
+    "cargo": "Minerals",
+    "status": "IN_TRANSIT",
+    "severity": "LOW",
+    "reasoning": "Conditions within normal parameters. No action required.",
+    "alternate_route": null,
+    "eta_impact_hrs": 0,
+    "weather_snapshot": {
+      "wind_knots_now": 24.9,
+      "wind_knots_max_72h": 26.5,
+      "wave_height_m": 3.0,
+      "storm_probability": 0.0,
+      "worst_waypoint": [
+        15.0,
+        58.0
+      ]
+    }
+  },
+  {
+    "shipment_id": "SH-05",
+    "vessel": "MV Atlantic Bridge",
+    "origin": "New York",
+    "destination": "Lagos",
+    "cargo": "Machinery",
+    "status": "IN_TRANSIT",
+    "severity": "LOW",
+    "reasoning": "Conditions within normal parameters. No action required.",
+    "alternate_route": null,
+    "eta_impact_hrs": 0,
+    "weather_snapshot": {
+      "wind_knots_now": 9.5,
+      "wind_knots_max_72h": 17.3,
+      "wave_height_m": 1.5,
+      "storm_probability": 0.1,
+      "worst_waypoint": [
+        35.0,
+        -50.0
+      ]
+    }
+  }
+]

@@ -1,0 +1,82 @@
+[
+    {
+        "shipment_id": "SH-01",
+        "vessel": "MV Pacific Star",
+        "origin": "Taipei",
+        "destination": "Rotterdam",
+        "cargo": "Semiconductors",
+        "status": "IN_TRANSIT",
+        "eta_days": 22,
+        "worst_waypoint": [20.0, 118.0],
+        "weather_snapshot": {
+            "wind_knots_now": 72.0,
+            "wind_knots_max_72h": 91.0,
+            "wave_height_m": 8.5,
+            "storm_probability": 0.94
+        }
+    },
+    {
+        "shipment_id": "SH-02",
+        "vessel": "MV Asian Horizon",
+        "origin": "Singapore",
+        "destination": "Los Angeles",
+        "cargo": "Electronics",
+        "status": "IN_TRANSIT",
+        "eta_days": 18,
+        "worst_waypoint": [14.5, 121.0],
+        "weather_snapshot": {
+            "wind_knots_now": 38.0,
+            "wind_knots_max_72h": 48.0,
+            "wave_height_m": 5.2,
+            "storm_probability": 0.38
+        }
+    },
+    {
+        "shipment_id": "SH-03",
+        "vessel": "MV Northern Light",
+        "origin": "Shanghai",
+        "destination": "Hamburg",
+        "cargo": "Automotive Parts",
+        "status": "IN_TRANSIT",
+        "eta_days": 25,
+        "worst_waypoint": [53.5, 9.9],
+        "weather_snapshot": {
+            "wind_knots_now": 15.0,
+            "wind_knots_max_72h": 23.0,
+            "wave_height_m": 1.7,
+            "storm_probability": 0.10
+        }
+    },
+    {
+        "shipment_id": "SH-04",
+        "vessel": "MV Coral Queen",
+        "origin": "Sydney",
+        "destination": "Dubai",
+        "cargo": "Minerals",
+        "status": "IN_TRANSIT",
+        "eta_days": 16,
+        "worst_waypoint": [-38.0, 146.0],
+        "weather_snapshot": {
+            "wind_knots_now": 51.0,
+            "wind_knots_max_72h": 63.0,
+            "wave_height_m": 7.2,
+            "storm_probability": 0.65
+        }
+    },
+    {
+        "shipment_id": "SH-05",
+        "vessel": "MV Atlantic Bridge",
+        "origin": "New York",
+        "destination": "Lagos",
+        "cargo": "Machinery",
+        "status": "IN_TRANSIT",
+        "eta_days": 14,
+        "worst_waypoint": [35.0, -50.0],
+        "weather_snapshot": {
+            "wind_knots_now": 17.0,
+            "wind_knots_max_72h": 27.0,
+            "wave_height_m": 2.2,
+            "storm_probability": 0.13
+        }
+    }
+]

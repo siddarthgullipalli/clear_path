@@ -1,95 +1,106 @@
-const USE_MOCK_JS   = true;         // flip to false at T+2:30 when backend is ready
-let   ACTIVE_VIEW   = 'dashboard';  // 'dashboard' | 'stream'
-const STREAM_PORT   = 8090;
-const STREAM_URL    = `http://localhost:${STREAM_PORT}/api/stream-risk`;
+/* ShipGuard — dashboard + routes + OpenUI stream */
+'use strict';
+
+const USE_MOCK_JS  = true;
+const STREAM_PORT  = 8090;
+const STREAM_URL   = `http://localhost:${STREAM_PORT}/api/stream-risk`;
 
 const SEVERITY_ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 
-const SEV_COLORS = {
-  CRITICAL: '#f85149',
-  HIGH:     '#fb8500',
-  MEDIUM:   '#d29922',
-  LOW:      '#3fb950',
-};
+let ACTIVE_VIEW  = 'dashboard'; // 'dashboard' | 'routes' | 'stream'
 
-const BTN_ICON_SVG = `<svg class="btn-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-  <path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Z" fill="currentColor" opacity="0.4"/>
-  <path d="M6.25 5.25 11 8l-4.75 2.75v-5.5Z" fill="currentColor"/>
-</svg>`;
+// ── In-memory route registry ──────────────────────────────────────────────────
+// Source of truth for all active shipments. Mutated by the Routes page.
+// Analysis reads from this so deleted routes are excluded.
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+let SHIPMENTS = [
+  { shipment_id: 'SH-01', vessel: 'MV Pacific Star',    origin: 'Taipei',    destination: 'Rotterdam',    cargo: 'Semiconductors',   status: 'DIVERTED',   eta_days: 22 },
+  { shipment_id: 'SH-04', vessel: 'MV Coral Queen',     origin: 'Sydney',    destination: 'Dubai',        cargo: 'Minerals',         status: 'DELAYED',    eta_days: 16 },
+  { shipment_id: 'SH-02', vessel: 'MV Asian Horizon',   origin: 'Singapore', destination: 'Los Angeles',  cargo: 'Electronics',      status: 'DELAYED',    eta_days: 18 },
+  { shipment_id: 'SH-03', vessel: 'MV Northern Light',  origin: 'Shanghai',  destination: 'Hamburg',      cargo: 'Automotive Parts', status: 'IN_TRANSIT', eta_days: 25 },
+  { shipment_id: 'SH-05', vessel: 'MV Atlantic Bridge', origin: 'New York',  destination: 'Lagos',        cargo: 'Machinery',        status: 'IN_TRANSIT', eta_days: 14 },
+];
 
-function formatTime(date) {
-  return date.toLocaleTimeString('en-US', {
-    hour:   '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+let nextShipmentNum = 6;  // next SH-XX counter
+let analysisHasRun  = false;
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+
+function showToast(message, delayMs) {
+  if (delayMs === undefined) delayMs = 300;
+  const toast = document.getElementById('slackToast');
+  const msgEl = document.getElementById('toastMessage');
+  if (msgEl) msgEl.textContent = message;
+  clearTimeout(toast._showTimer);
+  clearTimeout(toast._hideTimer);
+  toast._showTimer = setTimeout(() => {
+    requestAnimationFrame(() => {
+      toast.classList.add('visible');
+      toast._hideTimer = setTimeout(() => toast.classList.remove('visible'), 4000);
+    });
+  }, delayMs);
 }
 
-function statusLabel(status) {
-  return status.replace(/_/g, ' ');
+function showSlackToast() {
+  showToast('Alert sent to #logistics-channel', 500);
 }
 
-function etaLabel(hrs) {
-  if (!hrs) return null;
-  if (hrs < 24) return `+${hrs}h`;
-  return `+${Math.round(hrs / 24)}d delay`;
-}
+// ── Mode indicator ────────────────────────────────────────────────────────────
 
-function windClass(knots) {
-  if (knots >= 75) return 'danger';
-  if (knots >= 60) return 'warn';
-  return '';
-}
-
-function stormClass(pct) {
-  if (pct >= 80) return 'danger';
-  if (pct >= 60) return 'warn';
-  return '';
-}
-
-// ── (4) Waypoint callout ─────────────────────────────────────────────────────
-// Reads worst_waypoint from weather_snapshot. CRITICAL/HIGH only.
-// Negative lat = S, positive = N. Negative lon = W, positive = E.
-
-function formatWaypoint(ws, sev) {
-  if (sev !== 'CRITICAL' && sev !== 'HIGH') return '';
-  const wp = ws && ws.worst_waypoint;
-  if (!Array.isArray(wp) || wp.length < 2) return '';
-  const lat    = wp[0];
-  const lon    = wp[1];
-  const latStr = `${Math.abs(lat).toFixed(1)}°${lat >= 0 ? 'N' : 'S'}`;
-  const lonStr = `${Math.abs(lon).toFixed(1)}°${lon >= 0 ? 'E' : 'W'}`;
-  const color  = sev === 'CRITICAL' ? '#f85149' : '#d29922';
-  return `<p class="waypoint-callout" style="color:${color}">⚠ Risk peak at ${latStr}, ${lonStr}</p>`;
-}
-
-// ── Count-up animation ───────────────────────────────────────────────────────
-
-function countUp(el, target, decimals) {
-  const duration = 850;
-  const start    = performance.now();
-
-  function fmt(v) {
-    return decimals > 0 ? v.toFixed(decimals) : String(Math.round(v));
+function initModeIndicator() {
+  const dot   = document.getElementById('modeDot');
+  const label = document.getElementById('modeLabel');
+  if (USE_MOCK_JS) {
+    dot.className     = 'mode-dot demo';
+    label.textContent = 'Demo mode';
+  } else {
+    dot.className     = 'mode-dot live';
+    label.textContent = 'Live';
   }
-
-  function tick(now) {
-    const t      = Math.min((now - start) / duration, 1);
-    const eased  = 1 - Math.pow(1 - t, 4); // exponential ease-out
-    el.textContent = fmt(eased * target);
-    if (t < 1) requestAnimationFrame(tick);
-  }
-
-  requestAnimationFrame(tick);
 }
 
-// ── (3) Skeleton loading state ───────────────────────────────────────────────
-// Fills any grid container with 5 skeleton cards while data is fetching.
-// Each block pulses opacity only — no background-position trick.
+// ── Header subtitle ───────────────────────────────────────────────────────────
+
+function updateSubtitle(risks) {
+  analysisHasRun = true;
+  const alerts   = risks.filter(r => r.severity === 'CRITICAL' || r.severity === 'HIGH').length;
+  const advisory = risks.filter(r => r.severity === 'MEDIUM').length;
+  const clear    = risks.filter(r => r.severity === 'LOW').length;
+  const parts    = [];
+  if (alerts   > 0) parts.push(`${alerts} ${alerts === 1 ? 'alert' : 'alerts'} active`);
+  if (advisory > 0) parts.push(`${advisory} ${advisory === 1 ? 'advisory' : 'advisories'}`);
+  if (clear    > 0) parts.push(`${clear} clear`);
+  document.getElementById('headerSubtitle').textContent =
+    parts.length > 0 ? parts.join(' · ') : '0 issues detected';
+}
+
+function refreshRouteCount() {
+  if (!analysisHasRun) {
+    const n = SHIPMENTS.length;
+    document.getElementById('headerSubtitle').textContent =
+      `Supply chain risk intelligence — ${n} ${n === 1 ? 'shipment' : 'shipments'} active`;
+  }
+}
+
+// ── Status counts bar ─────────────────────────────────────────────────────────
+
+function updateStatusCounts(risks) {
+  const el  = document.getElementById('statusCounts');
+  const map = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+  risks.forEach(r => { if (map[r.severity] !== undefined) map[r.severity]++; });
+
+  const colors = { CRITICAL: '#f85149', HIGH: '#fb8500', MEDIUM: '#d29922', LOW: '#3fb950' };
+  el.innerHTML = Object.entries(map).map(([sev, count]) => `
+    <span class="status-count">
+      <span class="status-count-dot" style="background:${colors[sev]}"></span>
+      <span>${count} ${sev.charAt(0) + sev.slice(1).toLowerCase()}</span>
+    </span>`).join('');
+}
+
+// ── Skeleton loading ──────────────────────────────────────────────────────────
 
 function showSkeletons(gridEl) {
+  const count = Math.max(SHIPMENTS.length, 1);
   const one = `
     <div class="skeleton-card">
       <div style="display:flex;justify-content:space-between;gap:12px">
@@ -105,396 +116,534 @@ function showSkeletons(gridEl) {
       </div>
       <div class="skeleton-block" style="height:44px"></div>
     </div>`;
-  gridEl.innerHTML = Array(5).fill(one).join('');
+  gridEl.innerHTML = Array(count).fill(one).join('');
 }
 
-// ── (2) Slack toast ──────────────────────────────────────────────────────────
-// Slides in from right 500ms after call, stays 4s, slides out.
-// Transition lives on .slack-toast base — both enter and exit are animated.
+// ── Risk data fetch ───────────────────────────────────────────────────────────
 
-function showSlackToast() {
-  const toast = document.getElementById('slackToast');
-  clearTimeout(toast._showTimer);
-  clearTimeout(toast._hideTimer);
-  toast._showTimer = setTimeout(() => {
-    requestAnimationFrame(() => {
-      toast.classList.add('visible');
-      toast._hideTimer = setTimeout(() => toast.classList.remove('visible'), 4000);
+async function fetchRisks() {
+  if (USE_MOCK_JS) {
+    const activeIds   = new Set(SHIPMENTS.map(s => s.shipment_id));
+    const res         = await fetch('/mocks/llm_decision.json');
+    if (!res.ok) throw new Error(`Mock fetch failed: ${res.status}`);
+    const mockResults = await res.json();
+
+    // Filter to currently active shipments only
+    const filtered = mockResults.filter(r => activeIds.has(r.shipment_id));
+
+    // Add placeholder results for new routes not in mock data
+    const mockIds = new Set(mockResults.map(r => r.shipment_id));
+    SHIPMENTS.forEach(s => {
+      if (!mockIds.has(s.shipment_id)) {
+        filtered.push({
+          shipment_id:      s.shipment_id,
+          vessel:           s.vessel,
+          origin:           s.origin,
+          destination:      s.destination,
+          cargo:            s.cargo,
+          status:           'IN_TRANSIT',
+          severity:         'LOW',
+          reasoning:        'New route added — weather analysis pending next backend run.',
+          alternate_route:  null,
+          eta_impact_hrs:   0,
+          weather_snapshot: {
+            wind_knots_max_72h: 0,
+            storm_probability:  0,
+            wave_height_m:      0,
+            worst_waypoint:     null,
+          },
+        });
+      }
     });
-  }, 500);
+
+    return filtered;
+  }
+
+  const res = await fetch('/api/analyze');
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
 }
 
-// ── (5) Dynamic subtitle ─────────────────────────────────────────────────────
-// "2 alerts active · 1 advisory · 2 clear" — updates after every run.
+// ── Card helpers ──────────────────────────────────────────────────────────────
 
-function updateSubtitle(risks) {
-  const alerts   = risks.filter(r => r.severity === 'CRITICAL' || r.severity === 'HIGH').length;
-  const advisory = risks.filter(r => r.severity === 'MEDIUM').length;
-  const clear    = risks.filter(r => r.severity === 'LOW').length;
-  const parts    = [];
-  if (alerts   > 0) parts.push(`${alerts} ${alerts   === 1 ? 'alert'     : 'alerts'} active`);
-  if (advisory > 0) parts.push(`${advisory} ${advisory === 1 ? 'advisory' : 'advisories'}`);
-  if (clear    > 0) parts.push(`${clear} clear`);
-  document.getElementById('headerSubtitle').textContent =
-    parts.length > 0 ? parts.join(' · ') : '5 active shipments';
+function formatWaypoint(ws, sev) {
+  if (sev !== 'CRITICAL' && sev !== 'HIGH') return '';
+  const wp = ws && ws.worst_waypoint;
+  if (!Array.isArray(wp) || wp.length < 2) return '';
+  const lat    = wp[0], lon = wp[1];
+  const latStr = `${Math.abs(lat).toFixed(1)}°${lat >= 0 ? 'N' : 'S'}`;
+  const lonStr = `${Math.abs(lon).toFixed(1)}°${lon >= 0 ? 'E' : 'W'}`;
+  const color  = sev === 'CRITICAL' ? '#f85149' : '#d29922';
+  return `<p class="waypoint-callout" style="color:${color}">⚠ Risk peak at ${latStr}, ${lonStr}</p>`;
 }
-
-// ── Card builder ─────────────────────────────────────────────────────────────
 
 function buildCard(risk) {
-  const sev = risk.severity;
-  const ws  = risk.weather_snapshot || {};
+  const sev    = risk.severity || 'LOW';
+  const status = risk.status   || 'IN_TRANSIT';
+  const ws     = risk.weather_snapshot || {};
 
-  const windKnots  = ws.wind_knots_max_72h || 0;
-  const stormPct   = (ws.storm_probability || 0) * 100;
-  const waveHeight = ws.wave_height_m || 0;
+  const wind     = ws.wind_knots_max_72h  || 0;
+  const storm    = ws.storm_probability   || 0;
+  const stormPct = (storm <= 1 ? storm * 100 : storm).toFixed(0);
+  const wave     = (ws.wave_height_m || 0).toFixed(1);
 
-  const wClass = windClass(windKnots);
-  const sClass = stormClass(stormPct);
+  const warnCls  = wind >= 75 ? 'danger' : wind >= 60 ? 'warn' : '';
+  const stormCls = storm * 100 >= 80 ? 'danger' : storm * 100 >= 60 ? 'warn' : '';
 
-  const showAlt = (sev === 'CRITICAL' || sev === 'HIGH') && risk.alternate_route;
-  const etaText = etaLabel(risk.eta_impact_hrs);
+  const etaHrs = risk.eta_impact_hrs || 0;
+  let etaLabel = '';
+  if (etaHrs > 0) etaLabel = etaHrs < 24 ? `+${etaHrs}h` : `+${Math.round(etaHrs / 24)}d delay`;
+
+  const showAlt = (sev === 'CRITICAL' || sev === 'HIGH')
+               && risk.alternate_route
+               && risk.alternate_route !== 'null';
+
+  const leftStyle = sev === 'CRITICAL' ? 'border-left:2px solid rgba(248,81,73,0.50);'
+                  : sev === 'HIGH'      ? 'border-left:2px solid rgba(251,133,0,0.40);'
+                  : '';
+
+  const statusLbl = status.replace(/_/g, ' ');
 
   const altHTML = showAlt ? `
     <div class="alt-block ${sev}">
       <div class="alt-block-header">
         <span class="alt-label">Alternate Route</span>
-        ${etaText ? `<span class="eta-chip ${sev}">${etaText}</span>` : ''}
+        ${etaLabel ? `<span class="eta-chip ${sev}">${etaLabel}</span>` : ''}
       </div>
       <span class="alt-route-text">${risk.alternate_route}</span>
     </div>` : '';
 
   const waypointHTML = formatWaypoint(ws, sev);
 
-  const reasonHTML = risk.reasoning
-    ? `<p class="reasoning">${risk.reasoning}</p>`
-    : '';
-
   return `
-    <article class="card" data-severity="${sev}">
-
+    <article class="card" data-severity="${sev}" data-shipment-id="${risk.shipment_id || ''}" style="${leftStyle}">
       <div class="card-top">
         <span class="vessel-name">${risk.vessel}</span>
-        <span class="sev-badge ${sev}">
-          <span class="sev-dot"></span>${sev}
-        </span>
+        <span class="sev-badge ${sev}"><span class="sev-dot"></span>${sev}</span>
       </div>
-
       <div class="card-route-row">
         <span class="route-label">
           ${risk.origin}<span class="route-arrow"> &rarr; </span>${risk.destination}
         </span>
-        <span class="status-pill ${risk.status}">${statusLabel(risk.status)}</span>
+        <span class="status-pill ${status}">${statusLbl}</span>
       </div>
-
       <div class="metrics-grid">
         <div class="metric-tile">
           <span class="metric-label">Max Wind 72hr</span>
-          <span class="metric-value ${wClass}">
-            <span class="num" data-count="${windKnots}" data-dec="0">${Math.round(windKnots)}</span>
-            <span class="metric-unit">kn</span>
-          </span>
+          <span class="metric-value ${warnCls}"><span>${Math.round(wind)}</span><span class="metric-unit">kn</span></span>
         </div>
         <div class="metric-tile">
           <span class="metric-label">Storm Probability</span>
-          <span class="metric-value ${sClass}">
-            <span class="num" data-count="${stormPct}" data-dec="0">${Math.round(stormPct)}</span>
-            <span class="metric-unit">%</span>
-          </span>
+          <span class="metric-value ${stormCls}"><span>${stormPct}</span><span class="metric-unit">%</span></span>
         </div>
         <div class="metric-tile">
           <span class="metric-label">Wave Height</span>
-          <span class="metric-value">
-            <span class="num" data-count="${waveHeight}" data-dec="1">${waveHeight.toFixed(1)}</span>
-            <span class="metric-unit">m</span>
-          </span>
+          <span class="metric-value"><span>${wave}</span><span class="metric-unit">m</span></span>
         </div>
         <div class="metric-tile">
           <span class="metric-label">Cargo</span>
           <span class="metric-value cargo">${risk.cargo}</span>
         </div>
       </div>
-
       ${waypointHTML}
-      ${reasonHTML}
+      <p class="reasoning">${risk.reasoning}</p>
       ${altHTML}
-
     </article>`;
 }
 
-// ── Render ───────────────────────────────────────────────────────────────────
+// ── Card rendering (dashboard) ────────────────────────────────────────────────
 
 function renderCards(risks) {
+  const grid   = document.getElementById('grid');
   const sorted = [...risks].sort(
     (a, b) => (SEVERITY_ORDER[a.severity] ?? 99) - (SEVERITY_ORDER[b.severity] ?? 99)
   );
 
-  const grid = document.getElementById('grid');
-  grid.innerHTML = sorted.map(buildCard).join('');
+  grid.innerHTML = sorted.map(r => buildCard(r)).join('');
 
-  const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const cards = grid.querySelectorAll('.card');
-
-  cards.forEach((card, i) => {
-    if (prefersReduced) {
-      card.classList.add('visible');
-      return;
-    }
-    // setTimeout IS the stagger — animation fires at delay=0 when class is added
-    setTimeout(() => {
-      card.classList.add('visible');
-      card.querySelectorAll('.num[data-count]').forEach(el => {
-        const target   = parseFloat(el.dataset.count);
-        const decimals = parseInt(el.dataset.dec ?? '0', 10);
-        el.textContent = decimals > 0 ? '0.0' : '0';
-        countUp(el, target, decimals);
-      });
-    }, i * 60);
+  // Count-up animation for metric values
+  grid.querySelectorAll('.metric-value:not(.cargo)').forEach(el => {
+    const spanEl = el.querySelector('span:first-child');
+    if (!spanEl) return;
+    const target = parseFloat(spanEl.textContent);
+    if (isNaN(target) || target === 0) return;
+    const isDecimal = spanEl.textContent.includes('.');
+    const decimals  = isDecimal ? (spanEl.textContent.split('.')[1] || '').length : 0;
+    let current = 0;
+    const step  = target / 24;
+    const timer = setInterval(() => {
+      current = Math.min(current + step, target);
+      spanEl.textContent = isDecimal ? current.toFixed(decimals) : Math.round(current);
+      if (current >= target) clearInterval(timer);
+    }, 16);
   });
 
-  // Severity count chips
-  const counts = {};
-  risks.forEach(r => { counts[r.severity] = (counts[r.severity] || 0) + 1; });
-
-  document.getElementById('statusCounts').innerHTML = Object.entries(counts)
-    .sort(([a], [b]) => SEVERITY_ORDER[a] - SEVERITY_ORDER[b])
-    .map(([sev, n]) => `
-      <span class="status-count">
-        <span class="status-count-dot" style="background:${SEV_COLORS[sev]}"></span>
-        ${n} ${sev}
-      </span>`)
-    .join('');
-
-  document.getElementById('lastUpdated').textContent =
-    `Last updated ${formatTime(new Date())}`;
-
-  // (5) subtitle + (2) toast
-  updateSubtitle(risks);
-  if (risks.some(r => r.severity === 'CRITICAL' || r.severity === 'HIGH')) {
-    showSlackToast();
+  // Staggered entry
+  const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!prefersReduced) {
+    const cards = grid.querySelectorAll('.card');
+    cards.forEach((card, i) => {
+      setTimeout(() => card.classList.add('visible'), i * 80);
+    });
   }
+
+  // Slack toast for CRITICAL/HIGH
+  const hasUrgent = risks.some(r => r.severity === 'CRITICAL' || r.severity === 'HIGH');
+  if (hasUrgent) showSlackToast();
 }
 
-// ── Fetch ────────────────────────────────────────────────────────────────────
+// ── Run analysis ──────────────────────────────────────────────────────────────
 
-async function fetchRisks() {
-  if (USE_MOCK_JS) {
-    const res = await fetch('/mocks/llm_decision.json');
-    if (!res.ok) throw new Error(`Mock fetch failed: ${res.status}`);
-    return res.json();
+window.runAnalysis = async function runAnalysis() {
+  if (ACTIVE_VIEW === 'stream') return window.runStreaming();
+  if (ACTIVE_VIEW === 'routes') window.switchView('dashboard');
+
+  const btnRun = document.getElementById('btnRun');
+  const grid   = document.getElementById('grid');
+
+  btnRun.textContent = 'Analyzing…';
+  btnRun.classList.add('loading');
+  showSkeletons(grid);
+
+  try {
+    await new Promise(resolve => setTimeout(resolve, 900));
+    const risks  = await fetchRisks();
+    const sorted = [...risks].sort(
+      (a, b) => (SEVERITY_ORDER[a.severity] ?? 99) - (SEVERITY_ORDER[b.severity] ?? 99)
+    );
+    renderCards(sorted);
+    updateStatusCounts(sorted);
+    updateSubtitle(sorted);
+    document.getElementById('lastUpdated').textContent =
+      'Last updated ' + new Date().toLocaleTimeString();
+  } catch (err) {
+    grid.innerHTML = `
+      <div class="state-placeholder">
+        <span style="color:var(--critical)">&#9888;</span>
+        <span style="color:var(--text-secondary)">Analysis failed: ${err.message}</span>
+      </div>`;
+  } finally {
+    btnRun.textContent = 'Run Analysis';
+    btnRun.classList.remove('loading');
   }
-  const res = await fetch('/api/analyze');
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
-  return res.json();
-}
+};
 
-// ── View switcher ─────────────────────────────────────────────────────────────
+// ── View switching ────────────────────────────────────────────────────────────
 
 window.switchView = function switchView(mode) {
   ACTIVE_VIEW = mode;
 
   const dashView   = document.getElementById('dashView');
+  const routesView = document.getElementById('routesView');
   const streamView = document.getElementById('streamView');
   const btnDash    = document.getElementById('btnDashView');
+  const btnRoutes  = document.getElementById('btnRoutesView');
   const btnStream  = document.getElementById('btnStreamView');
+
+  [btnDash, btnRoutes, btnStream].forEach(b => b.classList.remove('active'));
 
   if (mode === 'stream') {
     dashView.classList.add('hidden');
+    routesView.classList.remove('active');
     streamView.classList.add('active');
-    btnDash.classList.remove('active');
     btnStream.classList.add('active');
+  } else if (mode === 'routes') {
+    dashView.classList.add('hidden');
+    streamView.classList.remove('active');
+    routesView.classList.add('active');
+    btnRoutes.classList.add('active');
+    renderRouteList();
   } else {
+    // dashboard
     dashView.classList.remove('hidden');
     streamView.classList.remove('active');
+    routesView.classList.remove('active');
     btnDash.classList.add('active');
-    btnStream.classList.remove('active');
   }
 };
 
-// ── Run Analysis (dispatches to dashboard or streaming path) ──────────────────
+// ── Routes page ───────────────────────────────────────────────────────────────
 
-window.runAnalysis = async function runAnalysis() {
-  if (ACTIVE_VIEW === 'stream') {
-    return window.runStreaming();
+function statusLabel(s) {
+  return s.replace(/_/g, ' ');
+}
+
+function buildRouteRow(shipment, isNew) {
+  const st      = shipment.status || 'IN_TRANSIT';
+  const etaDays = shipment.eta_days != null ? `${shipment.eta_days}d` : '—';
+  const cls     = isNew ? ' entering' : '';
+  return `
+    <div class="route-row${cls}" data-shipment-id="${shipment.shipment_id}">
+      <span class="route-vessel">${shipment.vessel}</span>
+      <span class="route-leg">${shipment.origin} &rarr; ${shipment.destination}</span>
+      <span class="route-cargo">${shipment.cargo}</span>
+      <span class="status-pill ${st}">${statusLabel(st)}</span>
+      <span class="route-eta">${etaDays}</span>
+      <button class="btn-delete"
+              onclick="window.deleteRoute('${shipment.shipment_id}')"
+              aria-label="Delete route ${shipment.shipment_id}">
+        <span class="btn-delete-icon">&times;</span>
+        <span class="btn-delete-text">Delete</span>
+      </button>
+    </div>`;
+}
+
+function checkRouteEmpty() {
+  const list = document.getElementById('routeList');
+  if (!list) return;
+  const rows = list.querySelectorAll('.route-row');
+  if (rows.length === 0) {
+    const empty = document.createElement('div');
+    empty.className   = 'route-empty';
+    empty.textContent = 'No active routes. Add one below.';
+    list.appendChild(empty);
+  }
+}
+
+function renderRouteList() {
+  const list = document.getElementById('routeList');
+  if (!list) return;
+
+  // Preserve the static header row, rebuild everything else
+  const header = list.querySelector('.route-list-header');
+  list.innerHTML = '';
+  if (header) list.appendChild(header);
+
+  if (SHIPMENTS.length === 0) {
+    const empty = document.createElement('div');
+    empty.className   = 'route-empty';
+    empty.textContent = 'No active routes. Add one below.';
+    list.appendChild(empty);
+    return;
   }
 
-  const btn  = document.getElementById('btnRun');
-  const grid = document.getElementById('grid');
+  SHIPMENTS.forEach(s => {
+    const tmp     = document.createElement('div');
+    tmp.innerHTML = buildRouteRow(s, false).trim();
+    list.appendChild(tmp.firstElementChild);
+  });
+}
 
-  btn.classList.add('loading');
-  btn.innerHTML = 'Analyzing&hellip;';
-  showSkeletons(grid); // (3) skeleton replaces spinner
+function parseWaypoints(str) {
+  if (!str || !str.trim()) return [[0, 0], [0, 0], [0, 0]];
+  return str.split('|').map(pair => {
+    const parts = pair.trim().split(',');
+    return [parseFloat(parts[0]) || 0, parseFloat(parts[1]) || 0];
+  });
+}
 
-  try {
-    const risks = await fetchRisks();
-    renderCards(risks);
-  } catch (err) {
-    grid.innerHTML = `
-      <div class="state-placeholder">
-        <span style="color:#f85149">Error: ${err.message}</span>
-      </div>`;
-  } finally {
-    btn.classList.remove('loading');
-    btn.innerHTML = `${BTN_ICON_SVG} Run Analysis`;
+window.addRoute = function addRoute(e) {
+  e.preventDefault();
+
+  const form   = document.getElementById('addRouteForm');
+  const vessel = form.querySelector('[name="vessel"]');
+  const origin = form.querySelector('[name="origin"]');
+  const dest   = form.querySelector('[name="destination"]');
+  const cargo  = form.querySelector('[name="cargo"]');
+  const etaInp = form.querySelector('[name="eta_days"]');
+  const waypts = form.querySelector('[name="waypoints"]');
+
+  [vessel, origin, dest, cargo, etaInp].forEach(el => el.classList.remove('invalid'));
+
+  let valid = true;
+  [vessel, origin, dest, cargo, etaInp].forEach(el => {
+    if (!el.value.trim()) { el.classList.add('invalid'); valid = false; }
+  });
+  if (!valid) return;
+
+  const id = `SH-${String(nextShipmentNum).padStart(2, '0')}`;
+  nextShipmentNum++;
+
+  const newShipment = {
+    shipment_id: id,
+    vessel:      vessel.value.trim(),
+    origin:      origin.value.trim(),
+    destination: dest.value.trim(),
+    cargo:       cargo.value.trim(),
+    status:      'IN_TRANSIT',
+    eta_days:    parseInt(etaInp.value, 10),
+    waypoints:   parseWaypoints(waypts ? waypts.value : ''),
+  };
+
+  SHIPMENTS.push(newShipment);
+
+  const list    = document.getElementById('routeList');
+  const emptyEl = list && list.querySelector('.route-empty');
+  if (emptyEl) emptyEl.remove();
+
+  if (list) {
+    const tmp     = document.createElement('div');
+    tmp.innerHTML = buildRouteRow(newShipment, true).trim();
+    const row     = tmp.firstElementChild;
+    list.appendChild(row);
+
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!prefersReduced) {
+      row.addEventListener('animationend', () => row.classList.remove('entering'), { once: true });
+    }
   }
+
+  form.reset();
+  refreshRouteCount();
+  showToast(`Route ${id} added`);
 };
 
-// ── OpenUI Streaming ──────────────────────────────────────────────────────────
+window.deleteRoute = function deleteRoute(shipmentId) {
+  SHIPMENTS = SHIPMENTS.filter(s => s.shipment_id !== shipmentId);
+
+  const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Remove matching dashboard card if visible
+  const card = document.querySelector(`.card[data-shipment-id="${shipmentId}"]`);
+  if (card) {
+    if (prefersReduced) {
+      card.remove();
+    } else {
+      card.style.transition = 'opacity 200ms ease-out, transform 200ms ease-out';
+      card.style.opacity    = '0';
+      card.style.transform  = 'translateY(-4px)';
+      setTimeout(() => card.remove(), 220);
+    }
+  }
+
+  // Remove route row
+  const row = document.querySelector(`.route-row[data-shipment-id="${shipmentId}"]`);
+  if (row) {
+    row.style.pointerEvents = 'none';
+    if (prefersReduced) {
+      row.remove();
+      checkRouteEmpty();
+    } else {
+      row.style.transition = 'opacity 180ms ease-out, transform 180ms ease-out';
+      row.style.opacity    = '0';
+      row.style.transform  = 'translateY(-4px)';
+      setTimeout(() => { row.remove(); checkRouteEmpty(); }, 200);
+    }
+  }
+
+  refreshRouteCount();
+  showToast(`Route ${shipmentId} removed`);
+};
+
+// ── OpenUI streaming ──────────────────────────────────────────────────────────
+
+function demoStream() {
+  const src = window.__OPENUI_DEMO_SOURCE__;
+  if (!src) {
+    console.error('[ShipGuard] __OPENUI_DEMO_SOURCE__ not found — run gen_demo_js.py');
+    return;
+  }
+
+  const grid    = document.getElementById('streamGrid');
+  const counter = document.getElementById('tokenCount');
+  grid.innerHTML = '';
+  let tokenCount = 0;
+
+  const renderer = window.ShipGuardOpenUI.library.createRenderer(grid);
+  renderer.onCard = () => {
+    document.getElementById('lastUpdated').textContent =
+      'Streamed at ' + new Date().toLocaleTimeString();
+  };
+
+  const CHUNK = 6;
+  let pos = 0;
+  function tick() {
+    if (pos >= src.length) { renderer.flush(); return; }
+    const chunk = src.slice(pos, pos + CHUNK);
+    pos += CHUNK;
+    tokenCount++;
+    counter.textContent = tokenCount;
+    renderer.push(chunk);
+    requestAnimationFrame(tick);
+  }
+  tick();
+}
+
+async function liveStream() {
+  const grid    = document.getElementById('streamGrid');
+  const counter = document.getElementById('tokenCount');
+  grid.innerHTML = '';
+  let tokenCount = 0;
+
+  const renderer = window.ShipGuardOpenUI.library.createRenderer(grid);
+  renderer.onCard = () => {
+    document.getElementById('lastUpdated').textContent =
+      'Streamed at ' + new Date().toLocaleTimeString();
+  };
+
+  const body = {
+    shipments: SHIPMENTS.map(s => ({
+      shipment_id: s.shipment_id,
+      vessel:      s.vessel,
+      origin:      s.origin,
+      destination: s.destination,
+      cargo:       s.cargo,
+    })),
+  };
+
+  const res = await fetch(STREAM_URL, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
+  });
+
+  if (!res.ok) throw new Error(`Stream HTTP ${res.status}`);
+
+  const reader  = res.body.getReader();
+  const decoder = new TextDecoder();
+  let   buf     = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      try {
+        const msg = JSON.parse(line.slice(6));
+        if (msg.type === 'token') {
+          tokenCount++;
+          counter.textContent = tokenCount;
+          renderer.push(msg.content);
+        }
+      } catch (_) { /* partial line */ }
+    }
+  }
+  renderer.flush();
+}
 
 window.runStreaming = async function runStreaming() {
-  const btn        = document.getElementById('btnRun');
-  const streamGrid = document.getElementById('streamGrid');
-  const tokenCount = document.getElementById('tokenCount');
+  const btnRun = document.getElementById('btnRun');
+  btnRun.textContent = 'Streaming…';
+  btnRun.classList.add('loading');
 
-  btn.classList.add('loading');
-  btn.innerHTML = '&#9889; Streaming&hellip;';
-  showSkeletons(streamGrid); // (3) skeleton while waiting for first token
-  tokenCount.textContent = '0';
-
-  let cleared = false;
-  let tokens  = 0;
-
-  const library  = window.ClearPathOpenUI.library;
-  let   renderer = null;
+  document.getElementById('tokenCount').textContent = '0';
 
   try {
-    const response = await fetch(STREAM_URL, { method: 'POST' });
-    if (!response.ok) throw new Error(`Stream endpoint returned ${response.status}`);
-
-    const reader  = response.body.getReader();
-    const decoder = new TextDecoder();
-    let   partial = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      partial += decoder.decode(value, { stream: true });
-
-      const lines = partial.split('\n');
-      partial = lines.pop();
-
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        let event;
-        try { event = JSON.parse(line.slice(6)); } catch { continue; }
-
-        if (event.type === 'token') {
-          if (!cleared) {
-            streamGrid.innerHTML = '';
-            renderer = library.createRenderer(streamGrid);
-            cleared = true;
-          }
-          tokens++;
-          tokenCount.textContent = String(tokens);
-          renderer.push(event.content);
-
-        } else if (event.type === 'done') {
-          if (renderer) renderer.flush();
-        }
-      }
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('demo') === 'stream' || USE_MOCK_JS) {
+      demoStream();
+      return;
     }
-
-    if (renderer) renderer.flush();
-
-    // Severity count chips
-    const streamedCards = streamGrid.querySelectorAll('.card[data-severity]');
-    const counts = {};
-    streamedCards.forEach(c => {
-      const s = c.dataset.severity;
-      counts[s] = (counts[s] || 0) + 1;
-    });
-    document.getElementById('statusCounts').innerHTML = Object.entries(counts)
-      .sort(([a], [b]) => SEVERITY_ORDER[a] - SEVERITY_ORDER[b])
-      .map(([sev, n]) => `
-        <span class="status-count">
-          <span class="status-count-dot" style="background:${SEV_COLORS[sev]}"></span>
-          ${n} ${sev}
-        </span>`)
-      .join('');
-
-    document.getElementById('lastUpdated').textContent =
-      `Streamed at ${formatTime(new Date())} via OpenUI Lang`;
-
-    // (5) subtitle + (2) toast
-    const streamedRisks = Array.from(streamedCards).map(c => ({ severity: c.dataset.severity }));
-    updateSubtitle(streamedRisks);
-    if (streamedRisks.some(r => r.severity === 'CRITICAL' || r.severity === 'HIGH')) {
-      showSlackToast();
-    }
-
+    await liveStream();
   } catch (err) {
-    streamGrid.innerHTML = `
-      <div class="state-placeholder" style="grid-column:1/-1">
-        <span style="color:#f85149">Stream error: ${err.message}</span>
+    document.getElementById('streamGrid').innerHTML = `
+      <div class="state-placeholder">
+        <span style="color:var(--critical)">&#9888;</span>
+        <span style="color:var(--text-secondary)">Stream failed: ${err.message}</span>
       </div>`;
   } finally {
-    btn.classList.remove('loading');
-    btn.innerHTML = `${BTN_ICON_SVG} Run Analysis`;
+    btnRun.textContent = 'Run Analysis';
+    btnRun.classList.remove('loading');
   }
 };
 
-// ── Demo-stream mode ──────────────────────────────────────────────────────────
-// ?demo=stream → renders all 5 cards synchronously from pre-baked source.
-// No fetch — works with headless Chrome screenshots.
+// ── Init ──────────────────────────────────────────────────────────────────────
 
-window.demoStream = function demoStream() {
-  window.switchView('stream');
-  const streamGrid = document.getElementById('streamGrid');
-  const tokenCount = document.getElementById('tokenCount');
-
-  streamGrid.innerHTML = '';
-
-  const library  = window.ClearPathOpenUI.library;
-  const renderer = library.createRenderer(streamGrid);
-
-  const source = window.__OPENUI_DEMO_SOURCE__ || '';
-  renderer.push(source);
-  renderer.flush();
-
-  tokenCount.textContent = String(Math.round(source.length / 6));
-
-  // Severity count chips
-  const streamedCards = streamGrid.querySelectorAll('.card[data-severity]');
-  const counts = {};
-  streamedCards.forEach(c => {
-    const s = c.dataset.severity;
-    counts[s] = (counts[s] || 0) + 1;
-  });
-  document.getElementById('statusCounts').innerHTML = Object.entries(counts)
-    .sort(([a], [b]) => SEVERITY_ORDER[a] - SEVERITY_ORDER[b])
-    .map(([sev, n]) => `<span class="status-count">
-      <span class="status-count-dot" style="background:${SEV_COLORS[sev]}"></span>
-      ${n} ${sev}</span>`)
-    .join('');
-
-  document.getElementById('lastUpdated').textContent =
-    `Demo stream rendered at ${formatTime(new Date())} via OpenUI Lang`;
-
-  // (5) subtitle + (2) toast
-  const streamedRisks = Array.from(streamedCards).map(c => ({ severity: c.dataset.severity }));
-  updateSubtitle(streamedRisks);
-  if (streamedRisks.some(r => r.severity === 'CRITICAL' || r.severity === 'HIGH')) {
-    showSlackToast();
-  }
-};
-
-window.onload = () => {
-  // (1) Mode indicator — amber dot in demo, pulsing green dot when live
-  const dot   = document.getElementById('modeDot');
-  const label = document.getElementById('modeLabel');
-  if (USE_MOCK_JS) {
-    dot.classList.add('demo');
-    label.textContent = 'Demo mode';
-  } else {
-    dot.classList.add('live');
-    label.textContent = 'Live';
-  }
-
-  const params = new URLSearchParams(location.search);
-  if (params.get('demo') === 'stream') {
-    window.demoStream();
-  } else {
-    window.runAnalysis();
-  }
-};
+window.addEventListener('load', function () {
+  initModeIndicator();
+  renderRouteList();
+  window.runAnalysis();
+});

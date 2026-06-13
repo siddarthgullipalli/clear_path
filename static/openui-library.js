@@ -1,5 +1,5 @@
 /**
- * ShipGuard OpenUI Component Library
+ * ClearPath OpenUI Component Library
  *
  * Implements the OpenUI Lang defineComponent + createLibrary pattern.
  * The library owns:
@@ -8,7 +8,7 @@
  *   - The stream parser that rebuilds RiskCard instances from LLM token chunks
  *   - The render function that produces HTML matching the dashboard CSS
  *
- * No external dependencies. Exposed as window.ShipGuardOpenUI.
+ * No external dependencies. Exposed as window.ClearPathOpenUI.
  */
 (function (global) {
   'use strict';
@@ -359,9 +359,9 @@
 
   // ── Instantiate library and expose globally ─────────────────────────────────
 
-  var library = createLibrary('ShipGuard', [RiskCard]);
+  var library = createLibrary('ClearPath', [RiskCard]);
 
-  global.ShipGuardOpenUI = {
+  global.ClearPathOpenUI = {
     defineComponent: defineComponent,
     createLibrary:   createLibrary,
     library:         library,

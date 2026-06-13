@@ -1,4 +1,4 @@
-/* ShipGuard — dashboard + routes + OpenUI stream */
+/* ClearPath — dashboard + routes + OpenUI stream */
 'use strict';
 
 const USE_MOCK_JS  = true;
@@ -78,7 +78,7 @@ function refreshRouteCount() {
   if (!analysisHasRun) {
     const n = SHIPMENTS.length;
     document.getElementById('headerSubtitle').textContent =
-      `Supply chain risk intelligence — ${n} ${n === 1 ? 'shipment' : 'shipments'} active`;
+      `ClearPath — Weather-Driven Supply Chain Risk Agent — ${n} ${n === 1 ? 'shipment' : 'shipments'} active`;
   }
 }
 
@@ -530,7 +530,7 @@ window.deleteRoute = function deleteRoute(shipmentId) {
 function demoStream() {
   const src = window.__OPENUI_DEMO_SOURCE__;
   if (!src) {
-    console.error('[ShipGuard] __OPENUI_DEMO_SOURCE__ not found — run gen_demo_js.py');
+    console.error('[ClearPath] __OPENUI_DEMO_SOURCE__ not found — run gen_demo_js.py');
     return;
   }
 
@@ -539,7 +539,7 @@ function demoStream() {
   grid.innerHTML = '';
   let tokenCount = 0;
 
-  const renderer = window.ShipGuardOpenUI.library.createRenderer(grid);
+  const renderer = window.ClearPathOpenUI.library.createRenderer(grid);
   renderer.onCard = () => {
     document.getElementById('lastUpdated').textContent =
       'Streamed at ' + new Date().toLocaleTimeString();
@@ -565,7 +565,7 @@ async function liveStream() {
   grid.innerHTML = '';
   let tokenCount = 0;
 
-  const renderer = window.ShipGuardOpenUI.library.createRenderer(grid);
+  const renderer = window.ClearPathOpenUI.library.createRenderer(grid);
   renderer.onCard = () => {
     document.getElementById('lastUpdated').textContent =
       'Streamed at ' + new Date().toLocaleTimeString();

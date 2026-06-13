@@ -88,10 +88,14 @@ async def startup_event():
 @app.get("/health")
 async def health():
     """Health check endpoint — returns server status and cache info."""
+    import os as _os
     return {
         "status": "ok",
         "mock_mode": USE_MOCKS,
         "cached_results": len(_cached_results),
+        "has_pioneer_key": bool(_os.getenv("PIONEER_API_KEY") or _os.getenv("OPENAI_API_KEY")),
+        "has_telegram": bool(_os.getenv("TELEGRAM_BOT_TOKEN")),
+        "has_clickhouse": bool(_os.getenv("CLICKHOUSE_HOST")),
     }
 
 
